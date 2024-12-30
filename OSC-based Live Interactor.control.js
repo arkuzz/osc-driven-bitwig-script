@@ -1,6 +1,7 @@
 loadAPI(19);
 
 host.setShouldFailOnDeprecatedUse(true);
+
 host.defineController("OSC", "Grassphonic Live Interactor", "0.1", "7b0dec63-840c-4a22-b710-2936d4a0aed6", "briangrassfield");
 var trackCount = 0;
 var trackBank;
@@ -10,9 +11,12 @@ var actualTrackCount = 0;
 var trackBankLength;
 var target;
 var scenesToLaunch = [];
-var sceneMapping = [0, 4, 2, 3, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
+var sceneMapping = [0, 4, 6, 9, 13, 16, 20, 23, 0, 0, 0, 0, 0, 0, 0, 0];
 var sceneMappedCount = 0;
 var transport;
+
+const NUM_TRACKS = 16;
+const NUM_SCENES = 128;
 
 function init() {
 
@@ -20,18 +24,16 @@ function init() {
 
    transport = host.createTransport();
    println("Transport created");
-   sceneBank = host.createSceneBank(128);
+   sceneBank = host.createSceneBank(NUM_SCENES);
    println("Scene bank created");
-   userControlBank = host.createUserControls(16);
-   println("User control bank created");
+   trackBank = host.createMainTrackBank(NUM_TRACKS, 0, NUM_SCENES);
+   println("Track bank created");
 
    transport = host.createTransport();
    transport.isPlaying().markInterested();
    transport.isPlaying().addValueObserver(function (isPlaying) {
       ledSwitch(target, "/led/playing", isPlaying);
    });
-
-   trackBank = host.createMainTrackBank(16, 0, 0); 
 
    var osc = host.getOscModule();
   
@@ -55,7 +57,6 @@ function init() {
             scenesToLaunch[sceneIndex] = scene;
             sceneIndex++;
             sceneMappedCount++;
-            println("Scene " + scenesToLaunch);
          }
       });
    }
@@ -80,7 +81,22 @@ function init() {
    
    }
 
-   masterTrack = host.createMasterTrack(0);
+   for (let t = 0; t < NUM_TRACKS; t++) {
+      let track = trackBank.getItemAt(t);
+      let slotBank = track.clipLauncherSlotBank();
+      for (let s = 0; s < NUM_SCENES; s++) {
+         let clipSlot = slotBank.getItemAt(s);
+
+         // Feliratkozás az isPlaying változására:
+         clipSlot.isPlaying().markInterested();
+         clipSlot.hasContent().markInterested(); // ha szükséges a tartalomra
+
+         // Minden változásnál meghívjuk a frissítő függvényt.
+         clipSlot.isPlaying().addValueObserver(function(playing) {
+            updateHighestPlayingSceneIndex();
+         });
+      }
+   }
       
    println("Creating address space");
    var receiveSpace = osc.createAddressSpace();
@@ -129,7 +145,6 @@ function refreshInterface(target)
       let index = i + 1;
       ledSwitch(target, "/led/track" + index, !track.mute().get());
       setLabel(target, "/labels/track" + index, track.name().get());
-      println("Track " + index + " name: " + track.name().get());
    }
 
    for (let i = 0; i < 16; i++) {
@@ -142,11 +157,11 @@ function refreshInterface(target)
 
    host.scheduleTask(function() {
       //println("Actual track count: " + actualTrackCount);
-      println("Actual track count: " + trackBankLength);
+      //println("Actual track count: " + trackBankLength);
 
       if(trackBankLength < 16)
       {
-         println("Track bank size is less than 16, exiting...");
+         //println("Track bank size is less than 16, exiting...");
          ledSwitch(target, "/led/checked", false);
          return;
       }
@@ -171,17 +186,17 @@ function setLabel(target, address, label)
 
 function setPage(page)
 {
-   println("Pager to send: " + page);
+   //println("Pager to send: " + page);
    target.sendMessage("/interface/pages", page);
 }
 
 function sceneExists(scene, index) {
-   println("Scene to send: " + scene);
+   //println("Scene to send: " + scene);
    setLabel(target, "/labels/scene" + (index+1), scene.name().get());
 }
 
 function sceneUnavailable(index) {
-   println("Scene unavailable: " + index);
+   //println("Scene unavailable: " + index);
    setLabel(target, "/labels/scene" + (index+1), "-");
 }
 
@@ -193,6 +208,36 @@ function launchScene(index) {
    scene.launch();
 }
 
+function updateHighestPlayingSceneIndex() {
+   let maxSceneIndex = -1;
+
+   for (let s = 0; s < NUM_SCENES; s++) {
+      for (let t = 0; t < NUM_TRACKS; t++) {
+         let clipSlot = trackBank.getItemAt(t).clipLauncherSlotBank().getItemAt(s);
+
+         if (clipSlot.isPlaying().get()) {
+            maxSceneIndex = s;
+         }
+      }
+   }
+
+   highestPlayingSceneIndex = maxSceneIndex;
+   println("The highest playing clip is:" + highestPlayingSceneIndex);
+   
+   let actualPlayingTuneScene = sceneMapping[0];
+   for(let i = 1; i < 16; i++) {
+      if(sceneMapping[i] <= highestPlayingSceneIndex)
+      {
+         actualPlayingTuneScene = i+1;
+      }
+      else
+      {
+         break;
+      }
+   }
+
+   ledSwitch(target, "/led/playingscene" + actualPlayingTuneScene, true);
+}
 
 function flush() {
    // TODO: Flush any output to your controller here.
