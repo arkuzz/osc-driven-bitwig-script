@@ -11,7 +11,7 @@ var actualTrackCount = 0;
 var trackBankLength;
 var target;
 var scenesToLaunch = [];
-var sceneMapping = [0, 4, 6, 9, 13, 16, 20, 23, 0, 0, 0, 0, 0, 0, 0, 0];
+var sceneMapping = [0, 4, 6, 9, 13, 16, 20, 23, 100, 100, 100, 100, 100, 100, 100, 100];
 var sceneMappedCount = 0;
 var transport;
 
@@ -33,6 +33,15 @@ function init() {
    transport.isPlaying().markInterested();
    transport.isPlaying().addValueObserver(function (isPlaying) {
       ledSwitch(target, "/led/playing", isPlaying);
+      if(!isPlaying)
+      {
+         for(index = 1; index <= 16; index++)
+         ledSwitch(target, "/led/playingscene" + index, false);
+      }
+      else
+      {
+         updateHighestPlayingSceneIndex();
+      }
    });
 
    var osc = host.getOscModule();
@@ -87,12 +96,15 @@ function init() {
       for (let s = 0; s < NUM_SCENES; s++) {
          let clipSlot = slotBank.getItemAt(s);
 
-         // Feliratkozás az isPlaying változására:
          clipSlot.isPlaying().markInterested();
-         clipSlot.hasContent().markInterested(); // ha szükséges a tartalomra
+         clipSlot.hasContent().markInterested(); 
 
-         // Minden változásnál meghívjuk a frissítő függvényt.
          clipSlot.isPlaying().addValueObserver(function(playing) {
+            if(!playing)
+            {
+               for(index = 1; index <= 16; index++)
+               ledSwitch(target, "/led/playingscene" + index, false);
+            }
             updateHighestPlayingSceneIndex();
          });
       }
@@ -119,8 +131,7 @@ function init() {
       receiveSpace.registerMethod("/controls/scene" + index, ",f", "Launch scene " + index, function (source, message)
       {
          launchScene(i);
-      }
-      );
+      });
    }
   
    receiveSpace.registerDefaultMethod (function (source, message)
@@ -201,11 +212,16 @@ function sceneUnavailable(index) {
 }
 
 function launchScene(index) {
-   if(index >= sceneMappedCount)
-      return
-   let scene = scenesToLaunch[index];
-   setPage(index);
-   scene.launch();
+   println("Launching scene: " + index);
+   if((index-1) >= sceneMappedCount)
+   {
+      return;
+   }
+   else
+   {
+      let scene = scenesToLaunch[index];
+      scene.launch();
+   }
 }
 
 function updateHighestPlayingSceneIndex() {
@@ -222,21 +238,25 @@ function updateHighestPlayingSceneIndex() {
    }
 
    highestPlayingSceneIndex = maxSceneIndex;
-   println("The highest playing clip is:" + highestPlayingSceneIndex);
    
-   let actualPlayingTuneScene = sceneMapping[0];
-   for(let i = 1; i < 16; i++) {
-      if(sceneMapping[i] <= highestPlayingSceneIndex)
+   let actualPlayingTuneScene = 0;
+   let actualSceneNumber = sceneMapping[0];
+   for(let i = 0; i < 16; i++) {
+      if(sceneMapping[i] > highestPlayingSceneIndex)
       {
-         actualPlayingTuneScene = i+1;
+         if(transport.isPlaying().get())
+         {
+            ledSwitch(target, "/led/playingscene" + actualPlayingTuneScene, true);
+            setPage(actualPlayingTuneScene-1);
+            return;
+         }
       }
       else
       {
-         break;
+         actualPlayingTuneScene = i+1;
+         actualSceneNumber = sceneMapping[i];
       }
    }
-
-   ledSwitch(target, "/led/playingscene" + actualPlayingTuneScene, true);
 }
 
 function flush() {
